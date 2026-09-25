@@ -555,6 +555,11 @@
                 
 
                 <div class="modal-body" data-settings-panel="ai" style="display: none;">
+                    <div class="form-group" id="ai-host-group" style="display: none;">
+                        <label for="ai-host">Host</label>
+                        <select id="ai-host" data-testid="ai-host" onchange="setAiHost(this.value)"></select>
+                    </div>
+
                     <p class="stage-intro">
                         Used by Create with AI and Modify with AI. Zeltro installs the agent for you
                         if it is not already on this machine.
@@ -605,7 +610,7 @@
                     </div>
 
                     <div class="form-group" id="ai-api-base-group" style="display: none;">
-                        <label for="ai-api-base">API Endpoint</label>
+                        <label for="ai-api-base">API Endpoint <span class="form-help" id="ai-base-req"></span></label>
                         <input type="text" id="ai-api-base" data-testid="ai-api-base" placeholder="https://api.example.com/v1">
                         <!-- Known-good URLs for the selected agent. These fill the
                              field they sit under and nothing else — the old Preset

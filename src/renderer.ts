@@ -1391,7 +1391,7 @@ function renderServices(): void {
     // and a red "Stopped" card reads as a broken service rather than an unused
     // feature. Anything enabled via `zeltro enable-service` shows normally.
     const visibleServices = Object.entries(sharedServices).filter(([serviceName]) => {
-        const key = serviceName.replace(/^zeltro-/, '').toLowerCase();
+        const key = serviceName.replace(/^(zeltro|podium)-/, '').toLowerCase();
         return !optionalServiceNames().includes(key) || enabledOptionalServices.includes(key);
     });
 
@@ -1412,7 +1412,10 @@ function renderServices(): void {
         // zeltro status keys these as `zeltro-<name>`. The action buttons below
         // compared the raw key against bare names, so NONE of them has ever
         // rendered — every service card has been actionless.
-        const slug = serviceName.replace(/^zeltro-/, '').toLowerCase();
+        // Either prefix — see the note on the visibility filter above. Stripping
+        // only one left every slug wrong, so no card matched redis/memcached and
+        // none offered its Manage button.
+        const slug = serviceName.replace(/^(zeltro|podium)-/, '').toLowerCase();
         // The listing calls MariaDB "mysql"; status calls the container mariadb.
         const listed = optionalServices.find(
             svc => svc.slug === slug || (svc.slug === 'mysql' && slug === 'mariadb'));
@@ -2977,6 +2980,9 @@ function switchSettingsTab(tab: string): void {
 
 async function loadAiSettingsForm(): Promise<void> {
     clearFieldErrors();
+    // Which machine this panel is configuring. The agent runs on the host that
+    // runs the project, so the setting belongs to a host rather than to the app.
+    renderAiHostPicker();
 
     // Hide agents this CLI cannot actually run. The cheap-models support is on
     // zeltro-cli `dev` and not its `master`, so a current install has no qwen —
@@ -3126,6 +3132,13 @@ async function onAiAgentChange(): Promise<void> {
     const keyReq = document.getElementById('ai-key-req');
     if (keyReq) keyReq.textContent = rules?.keyRequired ? '(required)' : '(optional)';
 
+    // The endpoint is never enforced on save — blank means "use the agent's
+    // default" — so it is always optional wherever the field is shown at all.
+    // It was the only one of the three without a marker, which read as required
+    // by omission next to two that said otherwise.
+    const baseReq = document.getElementById('ai-base-req');
+    if (baseReq) baseReq.textContent = '(optional)';
+
     // Qwen Code wants Node 22+. It runs on 20 with an EBADENGINE warning, which
     // is unsupported — and our own installers pin 20, so say so rather than
     // offering to install something this machine cannot properly run.
@@ -3261,7 +3274,11 @@ async function saveAiSettings(): Promise<void> {
     try {
         // Not --json-output: that suppresses the installer's progress, which is
         // the whole reason this streams.
-        const result = await ipcRenderer.invoke('execute-command-stream', 'zeltro', args);
+        // Routed to the chosen host rather than spawned locally. On Windows
+        // there is no local CLI at all, which is what the bug report showed:
+        // `spawn zeltro ENOENT` from a machine that was never meant to have one.
+        const result = await ipcRenderer.invoke('execute-zeltro-stream-on',
+            aiHost, args[0], args.slice(1));
         aiSettingsStreaming = false;
 
         if (result.code === 0) {
@@ -3894,6 +3911,29 @@ function buildTileWrapper(session: TerminalSession, project: string): HTMLElemen
 //
 // `zeltro new --github` creates the repository from the machine running the
 // project, so gh has to be authenticated THERE. Per host, like services.
+
+let aiHost = 'local';
+
+async function setAiHost(hostId: string): Promise<void> {
+    aiHost = hostId;
+    await loadAiSettingsForm();
+}
+
+function renderAiHostPicker(): void {
+    const sel = document.getElementById('ai-host') as HTMLSelectElement | null;
+    if (!sel) return;
+
+    // A host removed from settings leaves this pointing at nothing.
+    if (!dashboardHosts.some((h) => h.id === aiHost)) {
+        aiHost = dashboardHosts[0]?.id || 'local';
+    }
+    sel.innerHTML = dashboardHosts.map((h) =>
+        `<option value="${escapeHtml(h.id)}"${h.id === aiHost ? ' selected' : ''}>${escapeHtml(h.label)}</option>`
+    ).join('');
+    // One host needs no choosing.
+    const group = document.getElementById('ai-host-group');
+    if (group) group.style.display = dashboardHosts.length > 1 ? '' : 'none';
+}
 
 let githubHost = 'local';
 let githubStatus: any = null;
@@ -5902,6 +5942,9 @@ async function submitEditProject(): Promise<void> {
 (window as any).__dictationModelId = dictationModelId;
 (window as any).__dictationQuality = dictationQuality;
 (window as any).setGithubHost = setGithubHost;
+(window as any).setAiHost = setAiHost;
+(window as any).__dashboardHosts = () => dashboardHosts;
+(window as any).__aiHost = () => aiHost;
 (window as any).loadGithubStatus = loadGithubStatus;
 (window as any).githubSignIn = githubSignIn;
 (window as any).githubSignOut = githubSignOut;

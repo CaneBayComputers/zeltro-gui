@@ -2592,13 +2592,16 @@ async function run() {
         const runs = {};
         for (const on of [true, false]) {
           document.getElementById('ai-unattended').checked = on;
-          ipc.invoke = async (channel, cmd, args) => {
-            // saveAiSettings streams `zeltro ai-set ...`; args is the argv.
-            if (channel === 'execute-command-stream' && cmd === 'zeltro') {
-              runs[on ? 'on' : 'off'] = (args || []).slice();
+          ipc.invoke = async (channel, a, b, c) => {
+            // The save is routed to a HOST now rather than spawned locally — a
+            // Windows install has no local CLI, which is what issue #64 hit. The
+            // flags checked below are unchanged; only the channel moved.
+            //   execute-zeltro-stream-on(hostId, subcommand, args)
+            if (channel === 'execute-zeltro-stream-on' && b === 'ai-set') {
+              runs[on ? 'on' : 'off'] = { host: a, args: (c || []).slice() };
               return { code: 1, stdout: '', stderr: 'intercepted by test' };
             }
-            return realInvoke(channel, cmd, args);
+            return realInvoke(channel, a, b, c);
           };
           await window.saveAiSettings();
         }
@@ -2606,9 +2609,13 @@ async function run() {
         return runs;
       });
       check('enabling sends --allow-unattended',
-        JSON.stringify(sent.on || []).includes('--allow-unattended'), JSON.stringify(sent.on));
+        JSON.stringify(sent.on?.args || []).includes('--allow-unattended'), JSON.stringify(sent.on));
       check('disabling sends --no-allow-unattended, not silence',
-        JSON.stringify(sent.off || []).includes('--no-allow-unattended'), JSON.stringify(sent.off));
+        JSON.stringify(sent.off?.args || []).includes('--no-allow-unattended'), JSON.stringify(sent.off));
+      // Issue #64: this spawned `zeltro` locally, and a Windows install has no
+      // local CLI by design — the report was `spawn zeltro ENOENT`.
+      check('the AI settings save targets a host rather than spawning locally',
+        typeof sent.on?.host === 'string' && sent.on.host.length > 0, JSON.stringify(sent.on));
     }
 
     // Switching agents must clear the previous agent's validation message —
