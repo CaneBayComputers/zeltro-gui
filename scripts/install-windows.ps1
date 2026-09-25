@@ -282,12 +282,38 @@ cd /d "$REPO_DIR"
 call npm run build-ts >nul 2>&1
 start "" npx electron dist\main.js
 "@
-$desktop = [Environment]::GetFolderPath('Desktop')
-$sc = (New-Object -ComObject WScript.Shell).CreateShortcut("$desktop\Zeltro GUI.lnk")
-$sc.TargetPath = $launcher
-$sc.WorkingDirectory = $REPO_DIR
-$sc.Save()
+# Shortcuts on the Desktop AND in the Start Menu.
+#
+# The Start Menu one is what most people actually use — it is what typing
+# "zeltro" into the search box finds, and a desktop icon is easy to lose under
+# windows or delete while tidying up.
+#
+# Both get an explicit .ico. Without one a shortcut to a .bat shows the generic
+# batch-file icon, which is what this did before.
+$shell = New-Object -ComObject WScript.Shell
+$icon  = Join-Path $REPO_DIR 'assets\icon.ico'
+
+function New-ZeltroShortcut($path) {
+    $sc = $shell.CreateShortcut($path)
+    $sc.TargetPath = $launcher
+    $sc.WorkingDirectory = $REPO_DIR
+    $sc.Description = 'Zeltro — local development environments'
+    # A .bat launcher always opens a console window; minimised keeps it out of
+    # the way rather than flashing a black box over whatever is on screen.
+    $sc.WindowStyle = 7
+    if (Test-Path $icon) { $sc.IconLocation = $icon }
+    $sc.Save()
+}
+
+New-ZeltroShortcut (Join-Path ([Environment]::GetFolderPath('Desktop')) 'Zeltro.lnk')
 Say "desktop shortcut created"
+
+# Per-user rather than all-users: the checkout lives under one account and the
+# launcher builds into it, so a shortcut offered to every user would point at a
+# directory they may not be able to write.
+$startMenu = Join-Path ([Environment]::GetFolderPath('Programs')) 'Zeltro.lnk'
+New-ZeltroShortcut $startMenu
+Say "start menu entry created"
 
 # --- Summary ---------------------------------------------------------------
 $ips = (Get-NetIPAddress -AddressFamily IPv4 |
