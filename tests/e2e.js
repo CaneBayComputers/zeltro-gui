@@ -3271,6 +3271,61 @@ async function run() {
       /electron\.exe/.test(target) && !/\.bat/.test(target), target);
     check('windows shortcut passes the built entrypoint as an argument',
       /\$sc\.Arguments\s*=\s*'dist\\main\.js'/.test(winBody));
+
+    // The shortcut script is GENERATED, so reading the source proves nothing:
+    // `'dist\main.js'` inside a template literal produces `dist` + `main.js`,
+    // because \m is not an escape and the backslash is silently dropped. That
+    // shipped once. So run the built function with child_process stubbed out,
+    // decode the command it would have executed, and assert on the real script.
+    {
+      const built = fsMod.readFileSync(pathMod.join(ROOT, 'dist/main.js'), 'utf8');
+      const at = built.indexOf('function refreshWindowsShortcuts');
+      check('the built main.js still has refreshWindowsShortcuts', at >= 0);
+      if (at >= 0) {
+        let depth = 0; let end = -1;
+        for (let j = built.indexOf('{', at); j < built.length; j++) {
+          if (built[j] === '{') depth++;
+          else if (built[j] === '}') { depth--; if (depth === 0) { end = j + 1; break; } }
+        }
+        let cmd = '';
+        // eslint-disable-next-line no-eval
+        const fn = eval(`(${built.slice(at, end).replace('function refreshWindowsShortcuts', 'function')})`
+          .replace('child_process_1.execSync', 'CAPTURE'));
+        // eslint-disable-next-line no-unused-vars
+        global.CAPTURE = (c) => { cmd = c; return ''; };
+        fn('C:\\zeltro-gui');
+        const b64 = (cmd.match(/-EncodedCommand (\S+)/) || [])[1] || '';
+        const script = Buffer.from(b64, 'base64').toString('utf16le');
+
+        check('generated script quotes the repo path verbatim, not JSON-escaped',
+          script.includes("$repo = 'C:\\zeltro-gui'"), script.split('\n')[1] || '');
+        check('generated script keeps single backslashes in its paths',
+          script.includes("'node_modules\\electron\\dist\\electron.exe'")
+          && script.includes("'assets\\icon.ico'")
+          && script.includes("'dist\\main.js'")
+          && !/\\\\/.test(script),
+          script);
+        check('generated script targets electron.exe, never a .bat',
+          /electron\.exe/.test(script) && !/\.bat/.test(script));
+      }
+    }
+
+    // Anything the installer writes INTO the checkout has to be gitignored.
+    // The launcher was not, so every Windows install had an untracked file in
+    // its tree, `git status --porcelain` was never empty, and the in-app
+    // updater refused every update as "uncommitted changes". Nobody on Windows
+    // could update from the app at all.
+    const ignored = fsMod.readFileSync(pathMod.join(ROOT, '.gitignore'), 'utf8')
+      .split('\n').map((l) => l.trim());
+    for (const m of winBody.matchAll(/Set-Content -Path \$(\w+)/g)) {
+      const assigned = winBody.match(
+        new RegExp(`\\$${m[1]}\\s*=\\s*["']([^"'\\n]+)["']`));
+      const target = assigned?.[1] || '';
+      if (!target.includes('$REPO_DIR')) continue;   // outside the checkout
+      const name = target.split('\\').pop();
+      check(`installer-generated ${name} is gitignored`,
+        ignored.includes(name), `add ${name} to .gitignore`);
+    }
   } finally {
     await app.close();
   }
