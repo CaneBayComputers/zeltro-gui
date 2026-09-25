@@ -93,6 +93,10 @@ jspm_packages/
 .DS_Store
 
 # Windows
+# The launcher install-windows.ps1 writes into the checkout. Untracked and not
+# ignored, it made every Windows install permanently "dirty", so the in-app
+# updater refused to pull — it treats any porcelain output as work at risk.
+zeltro-gui.bat
 Thumbs.db
 ehthumbs.db
 Desktop.ini

@@ -3271,6 +3271,23 @@ async function run() {
       /electron\.exe/.test(target) && !/\.bat/.test(target), target);
     check('windows shortcut passes the built entrypoint as an argument',
       /\$sc\.Arguments\s*=\s*'dist\\main\.js'/.test(winBody));
+
+    // Anything the installer writes INTO the checkout has to be gitignored.
+    // The launcher was not, so every Windows install had an untracked file in
+    // its tree, `git status --porcelain` was never empty, and the in-app
+    // updater refused every update as "uncommitted changes". Nobody on Windows
+    // could update from the app at all.
+    const ignored = fsMod.readFileSync(pathMod.join(ROOT, '.gitignore'), 'utf8')
+      .split('\n').map((l) => l.trim());
+    for (const m of winBody.matchAll(/Set-Content -Path \$(\w+)/g)) {
+      const assigned = winBody.match(
+        new RegExp(`\\$${m[1]}\\s*=\\s*["']([^"'\\n]+)["']`));
+      const target = assigned?.[1] || '';
+      if (!target.includes('$REPO_DIR')) continue;   // outside the checkout
+      const name = target.split('\\').pop();
+      check(`installer-generated ${name} is gitignored`,
+        ignored.includes(name), `add ${name} to .gitignore`);
+    }
   } finally {
     await app.close();
   }
