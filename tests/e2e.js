@@ -928,6 +928,14 @@ async function run() {
     check('a failed pull surfaces git\'s own message',
       /pulled\.out/.test(updateBlock));
 
+    // dist/ is gitignored, so a pull brings new SOURCE and leaves the built
+    // output alone. Saying only "updated" reads as "you are running it now",
+    // which is false until the launcher rebuilds on the next start.
+    const runUpdateBlock = require('fs').readFileSync(
+      require('path').join(require('./helpers').ROOT, 'src/renderer.ts'), 'utf8');
+    check('a successful update says a restart is needed',
+      /Restart Zeltro to use it/.test(runUpdateBlock));
+
     // --- Reachability -----------------------------------------------------
     //
     // A remote project's own addresses are useless from here. local_url is

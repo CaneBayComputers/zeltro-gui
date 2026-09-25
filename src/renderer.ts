@@ -6103,7 +6103,7 @@ async function runUpdate(repoId: string): Promise<void> {
 
     const result = await ipcRenderer.invoke('update-repo', repoId);
     if (result.ok) {
-        showSuccess(result.detail);
+        showSuccess(`${result.detail} Restart Zeltro to use it.`);
     } else {
         // A refusal or a conflict is shown as-is. Summarising git's own message
         // loses the part that says which file, which is the part that matters.
