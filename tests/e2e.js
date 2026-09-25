@@ -3261,6 +3261,16 @@ async function run() {
       pathMod.join(ROOT, 'packaging/debian-package/usr/share/applications/zeltro-gui.desktop'), 'utf8');
     check('desktop entry execs the launcher, not a nonexistent subcommand',
       /^Exec=zeltro-gui$/m.test(desktop), desktop.match(/^Exec=.*$/m)?.[0] || '');
+
+    // Windows will only pin a shortcut to the taskbar when its target is a real
+    // executable; a .bat target is silently refused, with no error to explain
+    // why the option is missing. So the shortcut must point at electron.exe.
+    const winBody = fsMod.readFileSync(pathMod.join(ROOT, 'scripts/install-windows.ps1'), 'utf8');
+    const target = winBody.match(/\$sc\.TargetPath\s*=\s*(.*)/)?.[1] || '';
+    check('windows shortcut targets electron.exe so it can be pinned',
+      /electron\.exe/.test(target) && !/\.bat/.test(target), target);
+    check('windows shortcut passes the built entrypoint as an argument',
+      /\$sc\.Arguments\s*=\s*'dist\\main\.js'/.test(winBody));
   } finally {
     await app.close();
   }

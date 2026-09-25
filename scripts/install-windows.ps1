@@ -288,19 +288,26 @@ start "" npx electron dist\main.js
 # "zeltro" into the search box finds, and a desktop icon is easy to lose under
 # windows or delete while tidying up.
 #
-# Both get an explicit .ico. Without one a shortcut to a .bat shows the generic
-# batch-file icon, which is what this did before.
+# Both get an explicit .ico. Without one they show Electron's own default icon,
+# since that is literally what they launch.
 $shell = New-Object -ComObject WScript.Shell
 $icon  = Join-Path $REPO_DIR 'assets\icon.ico'
 
+# Targets electron.exe directly rather than the .bat launcher.
+#
+# Windows only pins REAL EXECUTABLES to the taskbar — a shortcut to a batch file
+# cannot be pinned there, though the Start Menu accepts it fine. Pointing at the
+# executable also means no console window flashes up on launch.
+#
+# The launcher .bat stays for anyone who wants build-then-run in one step, but
+# nothing needs it now: updates build themselves, so the app no longer has to
+# compile on every start.
 function New-ZeltroShortcut($path) {
     $sc = $shell.CreateShortcut($path)
-    $sc.TargetPath = $launcher
+    $sc.TargetPath = Join-Path $REPO_DIR 'node_modules\electron\dist\electron.exe'
+    $sc.Arguments = 'dist\main.js'
     $sc.WorkingDirectory = $REPO_DIR
     $sc.Description = 'Zeltro — local development environments'
-    # A .bat launcher always opens a console window; minimised keeps it out of
-    # the way rather than flashing a black box over whatever is on screen.
-    $sc.WindowStyle = 7
     if (Test-Path $icon) { $sc.IconLocation = $icon }
     $sc.Save()
 }
