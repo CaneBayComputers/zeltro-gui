@@ -945,6 +945,53 @@ function runNpm(dir: string, args: string[]): { code: number; out: string } {
   }
 }
 
+/**
+ * Create or refresh the Windows Desktop and Start Menu shortcuts.
+ *
+ * The installer does this too, but the in-app updater is how most people
+ * actually take a new version, and it only pulled and built. So anyone who
+ * installed before the shortcuts existed never got them, and anyone who had
+ * the old ones kept a target that cannot be pinned to the taskbar. Refreshing
+ * here means updating in the app is enough.
+ *
+ * Kept in step with scripts/install-windows.ps1 — same target, arguments and
+ * icon. Change one, change the other.
+ */
+function refreshWindowsShortcuts(repoDir: string): { ok: boolean; out: string } {
+  // Targets electron.exe rather than a .bat because Windows silently refuses
+  // to pin a batch file to the taskbar.
+  const ps = `
+$ErrorActionPreference = 'Stop'
+$repo = ${JSON.stringify(repoDir)}
+$exe  = Join-Path $repo 'node_modules\\electron\\dist\\electron.exe'
+if (-not (Test-Path $exe)) { throw "electron.exe not found at $exe" }
+$icon = Join-Path $repo 'assets\\icon.ico'
+$shell = New-Object -ComObject WScript.Shell
+foreach ($p in @(
+    (Join-Path ([Environment]::GetFolderPath('Desktop')) 'Zeltro.lnk'),
+    (Join-Path ([Environment]::GetFolderPath('Programs')) 'Zeltro.lnk'))) {
+    $sc = $shell.CreateShortcut($p)
+    $sc.TargetPath = $exe
+    $sc.Arguments = 'dist\\main.js'
+    $sc.WorkingDirectory = $repo
+    $sc.Description = 'Zeltro - local development environments'
+    if (Test-Path $icon) { $sc.IconLocation = $icon }
+    $sc.Save()
+}
+`.trim();
+  try {
+    // -EncodedCommand avoids every layer of quoting between here and
+    // PowerShell; the script has backslashes, quotes and $ in it.
+    const encoded = Buffer.from(ps, 'utf16le').toString('base64');
+    execSync(`powershell -NoProfile -NonInteractive -EncodedCommand ${encoded}`, {
+      cwd: repoDir, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 60000
+    });
+    return { ok: true, out: '' };
+  } catch (error: any) {
+    return { ok: false, out: ((error.stdout || '') + (error.stderr || '')).trim() };
+  }
+}
+
 function git(dir: string, args: string[]): { code: number; out: string } {
   try {
     const out = execSync(`git ${args.join(' ')}`, {
@@ -1024,6 +1071,18 @@ ipcMain.handle('update-repo', async (
       return { ok: false, detail:
         'Updated, but the build failed, so the previous version is still what runs. '
         + built.out.split('\n').slice(0, 3).join(' ') };
+    }
+
+    // Best effort, and deliberately not fatal: the update itself succeeded, and
+    // a missing desktop icon is not a reason to report it as failed.
+    if (process.platform === 'win32') {
+      const shortcuts = refreshWindowsShortcuts(repo.dir);
+      if (!shortcuts.ok) {
+        // The renderer adds the restart notice, so this must not repeat it.
+        return { ok: true, detail:
+          'Updated, but the Desktop and Start Menu shortcuts could not be '
+          + 'refreshed — re-run install-windows.bat to get them.' };
+      }
     }
   }
   return { ok: true, detail: pulled.out.split('\n')[0] || 'Updated.' };
