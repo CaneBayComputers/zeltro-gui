@@ -972,16 +972,16 @@ function refreshWindowsShortcuts(repoDir: string): { ok: boolean; out: string } 
   const ps = `
 $ErrorActionPreference = 'Stop'
 $repo = ${psLiteral(repoDir)}
-$exe  = Join-Path $repo 'node_modules\electron\dist\electron.exe'
+$exe  = Join-Path $repo 'node_modules\\electron\\dist\\electron.exe'
 if (-not (Test-Path $exe)) { throw "electron.exe not found at $exe" }
-$icon = Join-Path $repo 'assets\icon.ico'
+$icon = Join-Path $repo 'assets\\icon.ico'
 $shell = New-Object -ComObject WScript.Shell
 foreach ($p in @(
     (Join-Path ([Environment]::GetFolderPath('Desktop')) 'Zeltro.lnk'),
     (Join-Path ([Environment]::GetFolderPath('Programs')) 'Zeltro.lnk'))) {
     $sc = $shell.CreateShortcut($p)
     $sc.TargetPath = $exe
-    $sc.Arguments = 'dist\main.js'
+    $sc.Arguments = 'dist\\main.js'
     $sc.WorkingDirectory = $repo
     $sc.Description = 'Zeltro - local development environments'
     if (Test-Path $icon) { $sc.IconLocation = $icon }
