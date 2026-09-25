@@ -930,6 +930,21 @@ function repoPaths(): Array<{ id: string; label: string; dir: string }> {
   return repos;
 }
 
+// npm, spelled the way the platform spells it. On Windows the executable is
+// npm.cmd; spawning a bare `npm` there fails with ENOENT, which is the same
+// trap that produced issue #64.
+function runNpm(dir: string, args: string[]): { code: number; out: string } {
+  const bin = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+  try {
+    const out = execSync(`${bin} ${args.join(' ')}`, {
+      cwd: dir, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 180000
+    });
+    return { code: 0, out: out.trim() };
+  } catch (error: any) {
+    return { code: error.status ?? 1, out: ((error.stdout || '') + (error.stderr || '')).trim() };
+  }
+}
+
 function git(dir: string, args: string[]): { code: number; out: string } {
   try {
     const out = execSync(`git ${args.join(' ')}`, {
@@ -997,6 +1012,19 @@ ipcMain.handle('update-repo', async (
   const pulled = git(repo.dir, ['pull', '--ff-only', 'origin', branch]);
   if (pulled.code !== 0) {
     return { ok: false, detail: pulled.out.split('\n').slice(0, 4).join(' ') || 'git pull failed' };
+  }
+
+  // The GUI is TypeScript and dist/ is gitignored, so a pull on its own changes
+  // nothing that actually runs. Building here rather than on every launch is
+  // what lets the Windows shortcut point straight at electron.exe — and only a
+  // real executable can be pinned to the Windows taskbar, which a .bat cannot.
+  if (repoId === 'gui') {
+    const built = runNpm(repo.dir, ['run', 'build-ts']);
+    if (built.code !== 0) {
+      return { ok: false, detail:
+        'Updated, but the build failed, so the previous version is still what runs. '
+        + built.out.split('\n').slice(0, 3).join(' ') };
+    }
   }
   return { ok: true, detail: pulled.out.split('\n')[0] || 'Updated.' };
 });
