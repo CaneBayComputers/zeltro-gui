@@ -958,21 +958,30 @@ function runNpm(dir: string, args: string[]): { code: number; out: string } {
  * icon. Change one, change the other.
  */
 function refreshWindowsShortcuts(repoDir: string): { ok: boolean; out: string } {
+  // NOT JSON.stringify. PowerShell has no backslash escapes, so a JSON-quoted
+  // path arrives with every separator doubled — "C:\\dir". Windows collapses
+  // duplicate separators when resolving a path, so TargetPath still worked and
+  // the breakage hid; Arguments, WorkingDirectory and IconLocation are stored
+  // as written, and the shortcut came out with a doubled icon path and
+  // `dist\\main.js` as its argument. A single-quoted PowerShell literal is
+  // verbatim, with '' as the only escape.
+  const psLiteral = (v: string) => `'${v.replace(/'/g, "''")}'`;
+
   // Targets electron.exe rather than a .bat because Windows silently refuses
   // to pin a batch file to the taskbar.
   const ps = `
 $ErrorActionPreference = 'Stop'
-$repo = ${JSON.stringify(repoDir)}
-$exe  = Join-Path $repo 'node_modules\\electron\\dist\\electron.exe'
+$repo = ${psLiteral(repoDir)}
+$exe  = Join-Path $repo 'node_modules\electron\dist\electron.exe'
 if (-not (Test-Path $exe)) { throw "electron.exe not found at $exe" }
-$icon = Join-Path $repo 'assets\\icon.ico'
+$icon = Join-Path $repo 'assets\icon.ico'
 $shell = New-Object -ComObject WScript.Shell
 foreach ($p in @(
     (Join-Path ([Environment]::GetFolderPath('Desktop')) 'Zeltro.lnk'),
     (Join-Path ([Environment]::GetFolderPath('Programs')) 'Zeltro.lnk'))) {
     $sc = $shell.CreateShortcut($p)
     $sc.TargetPath = $exe
-    $sc.Arguments = 'dist\\main.js'
+    $sc.Arguments = 'dist\main.js'
     $sc.WorkingDirectory = $repo
     $sc.Description = 'Zeltro - local development environments'
     if (Test-Path $icon) { $sc.IconLocation = $icon }
